@@ -9,25 +9,8 @@ struct MethodStats {
     latencies: Vec<f64>,
     input_tokens: usize,
     output_tokens: usize,
-    /// tool_name → latencies for tools/call sub-breakdown
-    tool_stats: HashMap<String, ToolStats>,
 }
 
-struct ToolStats {
-    calls: usize,
-    errors: usize,
-    latencies: Vec<f64>,
-    input_tokens: usize,
-    output_tokens: usize,
-}
-
-struct SlowestCall {
-    latency_ms: f64,
-    method: String,
-    tool_name: Option<String>,
-    start_time: String,
-    end_time: String,
-}
 
 #[cfg(test)]
 #[derive(Debug)]
@@ -102,7 +85,6 @@ fn analyze_hooks(lines: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     // Match PostToolUse with PreToolUse, compute latencies
     let mut method_stats: HashMap<String, MethodStats> = HashMap::new();
-    let mut slowest: Vec<SlowestCall> = Vec::new();
     let mut matched_count: usize = 0;
     let mut unmatched_pre: usize = 0;
     let mut unmatched_post: usize = 0;
@@ -126,20 +108,11 @@ fn analyze_hooks(lines: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         latencies: Vec::new(),
                         input_tokens: 0,
                         output_tokens: 0,
-                        tool_stats: HashMap::new(),
                     });
                 stats.calls += 1;
                 stats.latencies.push(latency_ms);
                 stats.input_tokens += input_tok;
                 stats.output_tokens += output_tok;
-
-                slowest.push(SlowestCall {
-                    latency_ms,
-                    method: tool_name.clone(),
-                    tool_name: Some(tool_name),
-                    start_time: format_time_short(pre.timestamp),
-                    end_time: format_time_short(entry.timestamp),
-                });
 
                 matched_count += 1;
                 matched_ids.insert(entry.tool_use_id.clone());
@@ -168,13 +141,6 @@ fn analyze_hooks(lines: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let pre_count = entries.iter().filter(|e| e.event == "PreToolUse").count();
     let post_count = entries.iter().filter(|e| e.event == "PostToolUse").count();
 
-    // Sort slowest
-    slowest.sort_by(|a, b| {
-        b.latency_ms
-            .partial_cmp(&a.latency_ms)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
     // Print report
     println!();
     println!("\u{2550}\u{2550}\u{2550} Agent Profiler Report \u{2550}\u{2550}\u{2550}");
@@ -201,8 +167,6 @@ fn analyze_hooks(lines: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     print_method_breakdown(&method_stats);
-    print_slowest(&slowest);
-    print_token_usage(&method_stats);
 
     Ok(())
 }
@@ -210,157 +174,52 @@ fn analyze_hooks(lines: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 fn print_method_breakdown(method_stats: &HashMap<String, MethodStats>) {
     println!();
     println!("\u{2500}\u{2500} Method Breakdown \u{2500}\u{2500}");
-    println!(
-        "{:<20} {:>5}  {:>6}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
-        "Method", "Calls", "Errors", "Avg(ms)", "P50(ms)", "P95(ms)", "P99(ms)", "Max(ms)"
-    );
 
     let mut methods: Vec<_> = method_stats.iter().collect();
     methods.sort_by(|a, b| a.0.cmp(b.0));
 
+    let name_width = methods
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+
+    println!(
+        "{:<width$}  {:>5}  {:>6}  {:>12}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "Method",
+        "Calls",
+        "Errors",
+        "Sum(Tokens)",
+        "Avg(ms)",
+        "P50(ms)",
+        "P95(ms)",
+        "P99(ms)",
+        "Max(ms)",
+        width = name_width,
+    );
+
     for (method, stats) in &methods {
         let mut lats = stats.latencies.clone();
         lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let total_tokens = stats.input_tokens + stats.output_tokens;
 
         println!(
-            "{:<20} {:>5}  {:>6}  {:>8.1}  {:>8.1}  {:>8.1}  {:>8.1}  {:>8.1}",
+            "{:<width$}  {:>5}  {:>6}  {:>12}  {:>9.1}  {:>9.1}  {:>9.1}  {:>9.1}  {:>9.1}",
             method,
             stats.calls,
             stats.errors,
+            format_tokens(total_tokens),
             avg(&lats),
             percentile(&lats, 50.0),
             percentile(&lats, 95.0),
             percentile(&lats, 99.0),
             lats.last().copied().unwrap_or(0.0),
+            width = name_width,
         );
-
-        // Sub-breakdown for tools
-        if !stats.tool_stats.is_empty() {
-            let mut tools: Vec<_> = stats.tool_stats.iter().collect();
-            tools.sort_by(|a, b| a.0.cmp(b.0));
-            for (i, (tool, ts)) in tools.iter().enumerate() {
-                let prefix = if i == tools.len() - 1 {
-                    "\u{2514}\u{2500}"
-                } else {
-                    "\u{251c}\u{2500}"
-                };
-                let mut tlats = ts.latencies.clone();
-                tlats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                println!(
-                    "  {} {:<16} {:>5}  {:>6}  {:>8.1}  {:>8.1}  {:>8.1}  {:>8.1}  {:>8.1}",
-                    prefix,
-                    tool,
-                    ts.calls,
-                    ts.errors,
-                    avg(&tlats),
-                    percentile(&tlats, 50.0),
-                    percentile(&tlats, 95.0),
-                    percentile(&tlats, 99.0),
-                    tlats.last().copied().unwrap_or(0.0),
-                );
-            }
-        }
     }
 }
 
-fn print_slowest(slowest: &[SlowestCall]) {
-    println!();
-    println!("\u{2500}\u{2500} Timeline (top 5 slowest) \u{2500}\u{2500}");
-    for (i, call) in slowest.iter().take(5).enumerate() {
-        let tool_suffix = if let Some(ref t) = call.tool_name {
-            format!("({})", t)
-        } else {
-            String::new()
-        };
-        println!(
-            "#{:<2} {:>7.0}ms  {}{:<20} [{} \u{2192} {}]",
-            i + 1,
-            call.latency_ms,
-            call.method,
-            tool_suffix,
-            call.start_time,
-            call.end_time,
-        );
-    }
-    println!();
-}
-
-fn print_token_usage(method_stats: &HashMap<String, MethodStats>) {
-    let total_input: usize = method_stats.values().map(|s| s.input_tokens).sum();
-    let total_output: usize = method_stats.values().map(|s| s.output_tokens).sum();
-
-    if total_input == 0 && total_output == 0 {
-        return;
-    }
-
-    println!();
-    println!("\u{2500}\u{2500} Token Usage (estimated) \u{2500}\u{2500}");
-    println!(
-        "{:<20} {:>5}  {:>9}  {:>9}  {:>9}",
-        "Method", "Calls", "Input", "Output", "Total"
-    );
-
-    let mut methods: Vec<_> = method_stats.iter().collect();
-    methods.sort_by(|a, b| {
-        let total_b = b.1.input_tokens + b.1.output_tokens;
-        let total_a = a.1.input_tokens + a.1.output_tokens;
-        total_b.cmp(&total_a)
-    });
-
-    for (method, stats) in &methods {
-        let total = stats.input_tokens + stats.output_tokens;
-        if total == 0 {
-            continue;
-        }
-        println!(
-            "{:<20} {:>5}  {:>9}  {:>9}  {:>9}",
-            method,
-            stats.calls,
-            format_tokens(stats.input_tokens),
-            format_tokens(stats.output_tokens),
-            format_tokens(total),
-        );
-
-        // Sub-breakdown for tools
-        if !stats.tool_stats.is_empty() {
-            let mut tools: Vec<_> = stats.tool_stats.iter().collect();
-            tools.sort_by(|a, b| {
-                let total_b = b.1.input_tokens + b.1.output_tokens;
-                let total_a = a.1.input_tokens + a.1.output_tokens;
-                total_b.cmp(&total_a)
-            });
-            for (i, (tool, ts)) in tools.iter().enumerate() {
-                let prefix = if i == tools.len() - 1 {
-                    "\u{2514}\u{2500}"
-                } else {
-                    "\u{251c}\u{2500}"
-                };
-                let tool_total = ts.input_tokens + ts.output_tokens;
-                if tool_total == 0 {
-                    continue;
-                }
-                println!(
-                    "  {} {:<16} {:>5}  {:>9}  {:>9}  {:>9}",
-                    prefix,
-                    tool,
-                    ts.calls,
-                    format_tokens(ts.input_tokens),
-                    format_tokens(ts.output_tokens),
-                    format_tokens(tool_total),
-                );
-            }
-        }
-    }
-
-    println!(
-        "{:<20} {:>5}  {:>9}  {:>9}  {:>9}",
-        "TOTAL",
-        "",
-        format_tokens(total_input),
-        format_tokens(total_output),
-        format_tokens(total_input + total_output),
-    );
-}
 
 fn format_tokens(tokens: usize) -> String {
     if tokens < 1000 {
@@ -387,9 +246,6 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[idx.min(sorted.len() - 1)]
 }
 
-fn format_time_short(ts: chrono::DateTime<chrono::Utc>) -> String {
-    ts.format("%H:%M:%S").to_string()
-}
 
 #[cfg(test)]
 fn compute_analysis(entries: &[HookLogEntry]) -> AnalysisResult {

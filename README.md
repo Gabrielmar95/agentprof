@@ -1,6 +1,12 @@
-![Agentprof logo](assets/logo.png)
+# AgentProf — A profiler for agentic coding tools
 
-A profiling tool for agentic tools like Claude Code and Codex. Captures timing and token usage data, then presents results via live web dashboard or terminal reports.
+<p align="center">
+    <picture>
+        <img src="assets/logo.png" alt="Agentprof logo" width="300">
+    </picture>
+</p>
+
+AgentProf is a profiling tool for coding agents like Claude Code and Codex. Captures timing and token usage data, then presents results via live web dashboard or terminal reports.
 
 ## Install
 
