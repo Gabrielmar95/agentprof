@@ -8,13 +8,27 @@
 
 AgentProf is a profiling tool for coding agents like Claude Code and Codex. Captures timing and token usage data, then presents results via live web dashboard or terminal reports.
 
+## Motivation
+
+Agentic coding tools make dozens of tool calls per session — reading files, running commands, calling MCP servers — but all of that happens behind the scenes. AgentProf makes it visible:
+
+- **Understand what the agent is actually doing** — see every tool call with full inputs, outputs, and timing
+- **Control costs** — identify which tools consume the most tokens, since that directly maps to API spend
+- **Find bottlenecks** — spot slow tools, excessive retries, or stuck sessions that waste time and money
+- **Optimize workflows** — tune your prompts, hooks, or MCP servers and measure the difference across sessions
+- **Audit tool usage** — review exactly what the agent called and with what arguments, for security or compliance
+
 ## Install
+
+```bash
+curl -LsSf https://github.com/kitaisreal/agentprof/releases/latest/download/agentprof-installer.sh | sh
+```
+
+Or build from source:
 
 ```bash
 cargo install --path .
 ```
-
-This builds a release binary and installs it to `~/.cargo/bin/agentprof`.
 
 ## Web UI Examples
 
