@@ -2,6 +2,7 @@
 name = "agentprof"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/kitaisreal/agentprof"
 
 [[bin]]
 name = "agentprof"
@@ -20,3 +21,8 @@ tiktoken-rs = "0.6"
 
 [dev-dependencies]
 tempfile = "3"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
