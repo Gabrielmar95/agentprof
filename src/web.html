@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Profiler Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+  }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+  h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
+  .header { margin-bottom: 24px; }
+  .header p { color: var(--text-dim); font-size: 14px; }
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th {
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  th:hover { color: var(--accent); }
+  th.sorted-asc::after { content: ' \25B2 '; font-size: 10px; }
+  th.sorted-desc::after { content: ' \25BC '; font-size: 10px; }
+  td { font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(88, 166, 255, 0.05); }
+  .num { text-align: right; font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; }
+  .timeline-container { position: relative; overflow-x: auto; }
+  .timeline-row {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    margin-bottom: 2px;
+    font-size: 12px;
+  }
+  .timeline-label {
+    width: 140px;
+    min-width: 140px;
+    text-align: right;
+    padding-right: 12px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .timeline-track {
+    flex: 1;
+    position: relative;
+    height: 20px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 3px;
+  }
+  .timeline-bar {
+    position: absolute;
+    height: 100%;
+    border-radius: 3px;
+    min-width: 2px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .timeline-bar:hover { opacity: 0.8; }
+  .timeline-bar .tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1c2128;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 100;
+    pointer-events: none;
+  }
+  .timeline-bar:hover .tooltip { display: block; }
+  .timeline-axis {
+    display: flex;
+    margin-left: 140px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-dim);
+    justify-content: space-between;
+  }
+  .filter-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: center;
+  }
+  .filter-bar input[type="text"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 240px;
+  }
+  .multi-select {
+    position: relative;
+    display: inline-block;
+  }
+  .multi-select-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 28px 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 120px;
+    text-align: left;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    white-space: nowrap;
+  }
+  .multi-select-btn:hover { border-color: var(--accent); }
+  .multi-select-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 0;
+    min-width: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 200;
+  }
+  .multi-select-dropdown.open { display: block; }
+  .multi-select-dropdown label {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .multi-select-dropdown label:hover { background: rgba(88, 166, 255, 0.1); }
+  .multi-select-dropdown input[type="checkbox"] {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+  }
+  .expandable { cursor: pointer; }
+  .expandable td:first-child::before { content: '\25B6  '; font-size: 10px; color: var(--text-dim); }
+  .expandable.open td:first-child::before { content: '\25BC  '; }
+  .detail-row { display: none; }
+  .detail-row.open { display: table-row; }
+  .detail-row td {
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.2);
+  }
+  .detail-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .detail-content pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 12px;
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .detail-content h4 { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .slow { color: var(--red); }
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: var(--text-dim);
+    font-size: 16px;
+  }
+  .tool-colors { }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Agent Profiler Dashboard</h1>
+  <p id="session-info">Loading...</p>
+</div>
+
+<div id="summary-cards" class="summary-cards"></div>
+
+<div class="section">
+  <h2>Method Breakdown</h2>
+  <table id="method-table">
+    <thead>
+      <tr>
+        <th data-key="tool_name">Tool</th>
+        <th data-key="calls" class="num">Calls</th>
+        <th data-key="errors" class="num">Errors</th>
+        <th data-key="sum_tokens" class="num">Sum (Tokens)</th>
+        <th data-key="sum_ms" class="num">Sum (ms)</th>
+        <th data-key="avg_ms" class="num">Avg (ms)</th>
+        <th data-key="p50_ms" class="num">P50 (ms)</th>
+        <th data-key="p95_ms" class="num">P95 (ms)</th>
+        <th data-key="p99_ms" class="num">P99 (ms)</th>
+        <th data-key="max_ms" class="num">Max (ms)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Tool Calls</h2>
+  <div class="filter-bar">
+    <input type="text" id="filter-search" placeholder="Filter by tool name or ID...">
+    <div class="multi-select" id="filter-tool-multi">
+      <button type="button" class="multi-select-btn" id="filter-tool-btn">All tools</button>
+      <div class="multi-select-dropdown" id="filter-tool-dropdown"></div>
+    </div>
+  </div>
+  <table id="calls-table">
+    <thead>
+      <tr>
+        <th data-key="tool_name">Tool</th>
+        <th data-key="latency_ms" class="num">Latency (ms)</th>
+        <th data-key="input_tokens" class="num">Input Tokens</th>
+        <th data-key="output_tokens" class="num">Output Tokens</th>
+        <th data-key="start_time">Start</th>
+        <th data-key="end_time">End</th>
+        <th data-key="tool_use_id">ID</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Timeline</h2>
+  <div id="timeline" class="timeline-container">
+    <div class="loading">Loading timeline...</div>
+  </div>
+</div>
+
+
+<script>
+(function() {
+  const TOOL_COLORS = [
+    '#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff',
+    '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#d2a8ff',
+    '#39d353', '#a5d6ff', '#ffa657', '#ff9bce', '#7ee787'
+  ];
+
+  let toolColorMap = {};
+  let colorIdx = 0;
+  function getToolColor(name) {
+    if (!toolColorMap[name]) {
+      toolColorMap[name] = TOOL_COLORS[colorIdx % TOOL_COLORS.length];
+      colorIdx++;
+    }
+    return toolColorMap[name];
+  }
+
+  let data = null;
+
+  // Stored render functions for re-rendering on SSE refresh
+  let renderMethodTableFn = null;
+  let renderCallsTableFn = null;
+
+  function formatMs(ms) {
+    if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+    return ms.toFixed(1);
+  }
+
+  function formatTime(isoStr) {
+    if (!isoStr) return '-';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  function formatDuration(secs) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    if (m > 0) return m + 'm ' + s + 's';
+    return s + 's';
+  }
+
+  function truncate(str, len) {
+    if (!str) return '';
+    const s = typeof str === 'string' ? str : JSON.stringify(str);
+    return s.length > len ? s.substring(0, len) + '...' : s;
+  }
+
+  function renderSummary() {
+    const info = document.getElementById('session-info');
+    if (data.session) {
+      const s = data.session;
+      info.textContent = 'Session: ' + formatTime(s.start) + ' \u2192 ' + formatTime(s.end) + ' (' + formatDuration(s.duration_secs) + ')';
+    }
+
+    const cards = document.getElementById('summary-cards');
+    const items = [
+      { label: 'Total Events', value: data.summary.total_events },
+      { label: 'Matched Calls', value: data.summary.matched_calls },
+      { label: 'Duration', value: formatDuration(data.session.duration_secs) },
+      { label: 'Unmatched Pre', value: data.summary.unmatched_pre },
+      { label: 'Unmatched Post', value: data.summary.unmatched_post },
+    ];
+    cards.innerHTML = items.map(function(item) {
+      return '<div class="card"><div class="label">' + item.label + '</div><div class="value">' + item.value + '</div></div>';
+    }).join('');
+  }
+
+  function makeSortable(tableId, getData, renderRow) {
+    const table = document.getElementById(tableId);
+    const headers = table.querySelectorAll('th[data-key]');
+    let sortKey = null;
+    let sortDir = 'desc';
+
+    function render() {
+      const rows = getData();
+      if (sortKey) {
+        rows.sort(function(a, b) {
+          let va = a[sortKey], vb = b[sortKey];
+          if (typeof va === 'string') va = va.toLowerCase();
+          if (typeof vb === 'string') vb = vb.toLowerCase();
+          if (va < vb) return sortDir === 'asc' ? -1 : 1;
+          if (va > vb) return sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+      const tbody = table.querySelector('tbody');
+      tbody.innerHTML = rows.map(renderRow).join('');
+      attachExpandHandlers(table);
+    }
+
+    headers.forEach(function(th) {
+      th.addEventListener('click', function() {
+        const key = th.dataset.key;
+        if (sortKey === key) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortKey = key;
+          sortDir = th.classList.contains('num') ? 'desc' : 'asc';
+        }
+        headers.forEach(function(h) { h.classList.remove('sorted-asc', 'sorted-desc'); });
+        th.classList.add('sorted-' + sortDir);
+        render();
+      });
+    });
+
+    return render;
+  }
+
+  function attachExpandHandlers(table) {
+    table.querySelectorAll('.expandable').forEach(function(row) {
+      row.addEventListener('click', function() {
+        row.classList.toggle('open');
+        const detail = row.nextElementSibling;
+        if (detail && detail.classList.contains('detail-row')) {
+          detail.classList.toggle('open');
+        }
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function setupMethodTable() {
+    const getRows = function() {
+      const stats = data.method_stats;
+      const methodKeys = Object.keys(stats);
+      return methodKeys.map(function(name) {
+        const s = stats[name];
+        return {
+          tool_name: name,
+          calls: s.calls,
+          errors: s.errors,
+          sum_ms: s.sum_ms,
+          avg_ms: s.avg_ms,
+          p50_ms: s.p50_ms,
+          p95_ms: s.p95_ms,
+          p99_ms: s.p99_ms,
+          max_ms: s.max_ms,
+          sum_tokens: s.sum_tokens
+        };
+      });
+    };
+
+    const renderRow = function(row) {
+      const color = getToolColor(row.tool_name);
+      return '<tr>' +
+        '<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:8px;"></span>' + escapeHtml(row.tool_name) + '</td>' +
+        '<td class="num">' + row.calls + '</td>' +
+        '<td class="num">' + (row.errors > 0 ? '<span class="slow">' + row.errors + '</span>' : '0') + '</td>' +
+        '<td class="num">' + row.sum_tokens.toLocaleString() + '</td>' +
+        '<td class="num">' + formatMs(row.sum_ms) + '</td>' +
+        '<td class="num">' + formatMs(row.avg_ms) + '</td>' +
+        '<td class="num">' + formatMs(row.p50_ms) + '</td>' +
+        '<td class="num">' + formatMs(row.p95_ms) + '</td>' +
+        '<td class="num">' + formatMs(row.p99_ms) + '</td>' +
+        '<td class="num">' + formatMs(row.max_ms) + '</td>' +
+        '</tr>';
+    };
+
+    renderMethodTableFn = makeSortable('method-table', getRows, renderRow);
+    renderMethodTableFn();
+  }
+
+  function renderTimeline() {
+    const container = document.getElementById('timeline');
+    const calls = data.tool_calls;
+    if (calls.length === 0) {
+      container.innerHTML = '<div class="loading">No tool calls to display.</div>';
+      return;
+    }
+
+    const startTimes = calls.map(function(c) { return new Date(c.start_time).getTime(); });
+    const endTimes = calls.map(function(c) { return new Date(c.end_time).getTime(); });
+    const minTime = Math.min.apply(null, startTimes);
+    const maxTime = Math.max.apply(null, endTimes);
+    const totalSpan = maxTime - minTime || 1;
+
+    // Show at most 100 calls in timeline, sorted by start time
+    const sorted = calls.slice().sort(function(a, b) {
+      return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+    });
+    const display = sorted.slice(0, 100);
+
+    let html = '';
+    display.forEach(function(call) {
+      const start = new Date(call.start_time).getTime();
+      const end = new Date(call.end_time).getTime();
+      const leftPct = ((start - minTime) / totalSpan * 100).toFixed(4);
+      const widthPct = Math.max(((end - start) / totalSpan * 100), 0.2).toFixed(4);
+      const color = getToolColor(call.tool_name);
+
+      html += '<div class="timeline-row">' +
+        '<div class="timeline-label" title="' + escapeHtml(call.tool_name) + '">' + escapeHtml(call.tool_name) + '</div>' +
+        '<div class="timeline-track">' +
+        '<div class="timeline-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + color + ';">' +
+        '<div class="tooltip">' + escapeHtml(call.tool_name) + ' \u2014 ' + formatMs(call.latency_ms) + '</div>' +
+        '</div></div></div>';
+    });
+
+    // Axis
+    const axisCount = 5;
+    let axisHtml = '<div class="timeline-axis">';
+    for (let i = 0; i <= axisCount; i++) {
+      const t = new Date(minTime + (totalSpan * i / axisCount));
+      axisHtml += '<span>' + t.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '</span>';
+    }
+    axisHtml += '</div>';
+
+    container.innerHTML = html + axisHtml;
+    if (calls.length > 100) {
+      container.innerHTML += '<p style="color:var(--text-dim);font-size:12px;margin-top:8px;">Showing first 100 of ' + calls.length + ' calls.</p>';
+    }
+  }
+
+  function setupCallsTable() {
+    const getRows = function() {
+      const calls = data.tool_calls;
+      const search = document.getElementById('filter-search').value.toLowerCase();
+      const checked = document.querySelectorAll('#filter-tool-dropdown input[type="checkbox"]:checked');
+      const selectedTools = new Set();
+      checked.forEach(function(cb) { selectedTools.add(cb.value); });
+      return calls.filter(function(c) {
+        if (selectedTools.size > 0 && !selectedTools.has(c.tool_name)) return false;
+        if (search && c.tool_name.toLowerCase().indexOf(search) === -1 && c.tool_use_id.toLowerCase().indexOf(search) === -1) return false;
+        return true;
+      });
+    };
+
+    var callsP95 = 0;
+    function updateCallsP95() {
+      const lats = data.tool_calls.map(function(c) { return c.latency_ms; }).sort(function(a,b) { return a - b; });
+      const p95Idx = Math.round(0.95 * (lats.length - 1));
+      callsP95 = lats[p95Idx] || 0;
+    }
+    updateCallsP95();
+
+    const renderRow = function(row) {
+      const color = getToolColor(row.tool_name);
+      const slowClass = row.latency_ms >= callsP95 ? ' slow' : '';
+      const inputStr = row.tool_input ? JSON.stringify(row.tool_input, null, 2) : 'N/A';
+      const responseStr = row.tool_response != null ? (typeof row.tool_response === 'string' ? row.tool_response : JSON.stringify(row.tool_response, null, 2)) : 'N/A';
+
+      return '<tr class="expandable">' +
+        '<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:8px;"></span>' + escapeHtml(row.tool_name) + '</td>' +
+        '<td class="num' + slowClass + '">' + formatMs(row.latency_ms) + '</td>' +
+        '<td class="num">' + (row.input_tokens != null ? row.input_tokens.toLocaleString() : '-') + '</td>' +
+        '<td class="num">' + (row.output_tokens != null ? row.output_tokens.toLocaleString() : '-') + '</td>' +
+        '<td>' + formatTime(row.start_time) + '</td>' +
+        '<td>' + formatTime(row.end_time) + '</td>' +
+        '<td style="color:var(--text-dim);font-size:11px;">' + escapeHtml(truncate(row.tool_use_id, 20)) + '</td>' +
+        '</tr>' +
+        '<tr class="detail-row"><td colspan="7"><div class="detail-content">' +
+        '<div><h4>Tool Input</h4><pre>' + escapeHtml(inputStr) + '</pre></div>' +
+        '<div><h4>Tool Response</h4><pre>' + escapeHtml(responseStr) + '</pre></div>' +
+        '</div></td></tr>';
+    };
+
+    renderCallsTableFn = makeSortable('calls-table', getRows, renderRow);
+    renderCallsTableFn();
+
+    document.getElementById('filter-search').addEventListener('input', renderCallsTableFn);
+
+    // Multi-select dropdown toggle
+    document.getElementById('filter-tool-btn').addEventListener('click', function(e) {
+      e.stopPropagation();
+      document.getElementById('filter-tool-dropdown').classList.toggle('open');
+    });
+
+    // Checkbox changes re-render the table
+    document.getElementById('filter-tool-dropdown').addEventListener('change', function() {
+      updateFilterBtnText();
+      renderCallsTableFn();
+    });
+
+    // Click outside closes the dropdown
+    document.addEventListener('click', function(e) {
+      var container = document.getElementById('filter-tool-multi');
+      if (!container.contains(e.target)) {
+        document.getElementById('filter-tool-dropdown').classList.remove('open');
+      }
+    });
+  }
+
+  function rebuildFilterDropdown() {
+    const dropdown = document.getElementById('filter-tool-dropdown');
+    const btn = document.getElementById('filter-tool-btn');
+    // Preserve currently checked tools
+    const prevChecked = new Set();
+    dropdown.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) {
+      prevChecked.add(cb.value);
+    });
+    const calls = data.tool_calls;
+    const toolNames = [...new Set(calls.map(function(c) { return c.tool_name; }))].sort();
+    dropdown.innerHTML = toolNames.map(function(name) {
+      const checked = prevChecked.has(name) ? ' checked' : '';
+      return '<label><input type="checkbox" value="' + escapeHtml(name) + '"' + checked + '>' + escapeHtml(name) + '</label>';
+    }).join('');
+    updateFilterBtnText();
+  }
+
+  function updateFilterBtnText() {
+    const btn = document.getElementById('filter-tool-btn');
+    const checked = document.querySelectorAll('#filter-tool-dropdown input[type="checkbox"]:checked');
+    if (checked.length === 0) {
+      btn.textContent = 'All tools';
+    } else if (checked.length === 1) {
+      btn.textContent = checked[0].value;
+    } else {
+      btn.textContent = checked.length + ' tools selected';
+    }
+  }
+
+  function refreshAll() {
+    renderSummary();
+    renderMethodTableFn();
+    rebuildFilterDropdown();
+    updateCallsP95();
+    renderCallsTableFn();
+    renderTimeline();
+  }
+
+  // Initial load
+  fetch('/api/data')
+    .then(function(res) { return res.json(); })
+    .then(function(d) {
+      data = d;
+      renderSummary();
+      setupMethodTable();
+      setupCallsTable();
+      rebuildFilterDropdown();
+      renderTimeline();
+
+      // Set up SSE for live updates
+      var evtSource = new EventSource('/api/events');
+      evtSource.addEventListener('refresh', function() {
+        fetch('/api/data')
+          .then(function(res) { return res.json(); })
+          .then(function(d) {
+            data = d;
+            refreshAll();
+          });
+      });
+    })
+    .catch(function(err) {
+      document.body.innerHTML = '<div class="loading" style="color:var(--red)">Failed to load data: ' + err.message + '</div>';
+    });
+})();
+</script>
+</body>
+</html>
